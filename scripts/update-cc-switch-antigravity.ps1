@@ -173,14 +173,14 @@ if ($hasRust -and $hasLinker) {
     $generatedKeys = $false
     if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
         Write-Host "未检测到签名私钥，生成临时签名密钥对..." -ForegroundColor Gray
-        pnpm tauri signer generate -w temp_build_key -p "" --ci
+        pnpm tauri signer generate -w temp_build_key --password "ccswitch" --ci
         $pub = Get-Content temp_build_key.pub -Raw
         $confPath = "src-tauri/tauri.conf.json"
         $conf = Get-Content $confPath -Raw | ConvertFrom-Json
         $conf.plugins.updater.pubkey = $pub.Trim()
         $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
         $env:TAURI_SIGNING_PRIVATE_KEY = (Resolve-Path "temp_build_key").Path
-        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "ccswitch"
         $generatedKeys = $true
     }
     try {
