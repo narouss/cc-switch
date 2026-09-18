@@ -600,3 +600,70 @@ For new features, please open an issue for discussion before submitting a PR. PR
 ## License
 
 MIT © Jason Young
+
+---
+
+## Antigravity 版本维护说明
+
+本分支（`antigravity`）包含对 Google Antigravity 的独立支持能力：
+- 会话管理（Session Manager）：扫描与解析 Antigravity 会话日志（`transcript.jsonl`），支持安全清理。
+- 用量统计（Usage Stats）：读取 SQLite 会话数据库，精准统计 input tokens、output tokens、cache read tokens 及思考 tokens，按日/周/月汇总看板。
+- 模型映射与计费：自动解析 Antigravity 模型占位符与别名（Gemini 2.5/3.5/3.6/3.7/3.8 Flash、Claude 4.6 等）。
+
+### 官方版本升级维护流程
+
+当上游官方仓库 `farion1231/cc-switch` 发布新版本时，升级流程如下：
+
+```text
+upstream/main
+→ 同步本地 main
+→ antigravity rebase main
+→ 测试
+→ Windows 构建
+```
+
+#### 方式一：使用一键升级脚本（推荐）
+
+在项目根目录下使用 PowerShell 7 运行：
+
+```powershell
+pwsh ./scripts/update-cc-switch-antigravity.ps1
+```
+
+该脚本会自动：
+1. 检查本地工作区状态，确保无未提交内容；
+2. 拉取 `upstream` 最新代码，并自动检测官方是否已原生支持 Antigravity；
+3. 将本地 `main` 强制对齐 `upstream/main` 并推送到个人 `origin/main`；
+4. 将 `antigravity` 分支变基（rebase）到最新 `main`；
+5. 若发生冲突，列出冲突文件并提供处置指导；
+6. 变基成功后，若本地具备编译环境则直接构建，否则自动推送并触发 GitHub Actions 云端构建 Windows x64 安装包。
+
+#### 方式二：手动升级步骤
+
+```powershell
+# 1. 确保当前工作区干净
+git status
+
+# 2. 获取上游最新代码
+git fetch upstream
+
+# 3. 同步本地 main
+git checkout main
+git reset --hard upstream/main
+git push origin main
+
+# 4. 变基 antigravity 分支
+git checkout antigravity
+git rebase main
+
+# 5. 解决可能出现的冲突（如无冲突则跳过）
+# git add <冲突文件>
+# git rebase --continue
+
+# 6. 本地验证与类型检查
+pnpm typecheck
+
+# 7. 推送至个人 Fork 仓库并触发云端构建
+git push -f origin antigravity
+```
+
