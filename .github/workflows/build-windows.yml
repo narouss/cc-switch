@@ -82,7 +82,18 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: 构建 Tauri Windows 应用
-        run: pnpm tauri build --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Host "未设置 TAURI_SIGNING_PRIVATE_KEY，为 Fork 构建临时移除 updater 配置以跳过更新包签名..." -ForegroundColor Yellow
+            $confPath = "src-tauri/tauri.conf.json"
+            $conf = Get-Content $confPath -Raw | ConvertFrom-Json
+            if ($conf.plugins) {
+              $conf.plugins.PSObject.Properties.Remove('updater')
+              $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
+            }
+          }
+          pnpm tauri build --target x86_64-pc-windows-msvc
 
       - name: 收集 Windows 安装包产物
         id: collect

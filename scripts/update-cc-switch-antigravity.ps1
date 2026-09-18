@@ -170,7 +170,23 @@ $hasLinker = Get-Command link.exe -ErrorAction SilentlyContinue
 
 if ($hasRust -and $hasLinker) {
     Write-Host "检测到本地具备完整 Rust + MSVC 编译环境，开始本地 Windows x64 构建..." -ForegroundColor Cyan
-    pnpm tauri build
+    $confModified = $false
+    if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+        $confPath = "src-tauri/tauri.conf.json"
+        $conf = Get-Content $confPath -Raw | ConvertFrom-Json
+        if ($conf.plugins) {
+            $conf.plugins.PSObject.Properties.Remove('updater')
+            $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
+            $confModified = $true
+        }
+    }
+    try {
+        pnpm tauri build
+    } finally {
+        if ($confModified) {
+            git checkout -- src-tauri/tauri.conf.json 2>$null
+        }
+    }
     if ($LASTEXITCODE -eq 0) {
         Write-Host "√ 本地构建成功！" -ForegroundColor Green
         Write-Host "`n================================================================" -ForegroundColor Green
