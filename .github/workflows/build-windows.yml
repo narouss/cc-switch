@@ -1,0 +1,116 @@
+name: Build Antigravity Windows x64
+
+on:
+  push:
+    branches:
+      - antigravity
+  workflow_dispatch:
+    inputs:
+      check_upstream:
+        description: '检查 upstream 是否有新提交'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-upstream:
+    name: 检查上游同步状态
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.check_upstream == true
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 对比上游提交
+        run: |
+          git remote add upstream https://github.com/farion1231/cc-switch.git || true
+          git fetch upstream main --quiet
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          echo "upstream/main 领先当前分支 $BEHIND 个提交。"
+          if [ "$BEHIND" -gt 0 ]; then
+            echo "::warning title=发现官方新版本::官方 farion1231/cc-switch 已有 $BEHIND 个新提交，建议在本地运行 scripts/update-cc-switch-antigravity.ps1 升级。"
+          else
+            echo "当前分支已与 upstream/main 保持同步。"
+          fi
+
+  build:
+    name: 构建 Windows x64 安装包
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 配置 Rust 编译环境
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy, rustfmt
+
+      - name: Rust 编译缓存
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 配置 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 前端类型检查
+        run: pnpm typecheck
+
+      - name: 后端 Clippy 检查
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: 后端单元测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: 构建 Tauri Windows 应用
+        run: pnpm tauri build --target x86_64-pc-windows-msvc
+
+      - name: 收集 Windows 安装包产物
+        id: collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-artifacts
+          $nsis = Get-ChildItem -Path "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+          $msi = Get-ChildItem -Path "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" -ErrorAction SilentlyContinue
+          if (-not $nsis -and -not $msi) {
+            $nsis = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+            $msi = Get-ChildItem -Path "src-tauri/target/release/bundle/msi/*.msi" -ErrorAction SilentlyContinue
+          }
+          if ($nsis) {
+            Write-Host "找到 NSIS 安装包: $($nsis.FullName)"
+            Copy-Item $nsis.FullName -Destination dist-artifacts/
+          }
+          if ($msi) {
+            Write-Host "找到 MSI 安装包: $($msi.FullName)"
+            Copy-Item $msi.FullName -Destination dist-artifacts/
+          }
+          Get-ChildItem dist-artifacts/
+
+      - name: 上传安装包 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cc-switch-antigravity-windows-x64
+          path: dist-artifacts/*
+          if-no-files-found: error
+          retention-days: 30
