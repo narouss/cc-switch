@@ -85,13 +85,15 @@ jobs:
         shell: pwsh
         run: |
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-            Write-Host "未设置 TAURI_SIGNING_PRIVATE_KEY，为 Fork 构建临时移除 updater 配置以跳过更新包签名..." -ForegroundColor Yellow
+            Write-Host "未设置 TAURI_SIGNING_PRIVATE_KEY，为构建生成临时签名密钥对..." -ForegroundColor Yellow
+            pnpm tauri signer generate -w temp_key -p "" --ci
+            $pub = Get-Content temp_key.pub -Raw
             $confPath = "src-tauri/tauri.conf.json"
             $conf = Get-Content $confPath -Raw | ConvertFrom-Json
-            if ($conf.plugins) {
-              $conf.plugins.PSObject.Properties.Remove('updater')
-              $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
-            }
+            $conf.plugins.updater.pubkey = $pub.Trim()
+            $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
+            $env:TAURI_SIGNING_PRIVATE_KEY = (Resolve-Path "temp_key").Path
+            $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
           }
           pnpm tauri build --target x86_64-pc-windows-msvc
 

@@ -170,20 +170,24 @@ $hasLinker = Get-Command link.exe -ErrorAction SilentlyContinue
 
 if ($hasRust -and $hasLinker) {
     Write-Host "检测到本地具备完整 Rust + MSVC 编译环境，开始本地 Windows x64 构建..." -ForegroundColor Cyan
-    $confModified = $false
+    $generatedKeys = $false
     if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+        Write-Host "未检测到签名私钥，生成临时签名密钥对..." -ForegroundColor Gray
+        pnpm tauri signer generate -w temp_build_key -p "" --ci
+        $pub = Get-Content temp_build_key.pub -Raw
         $confPath = "src-tauri/tauri.conf.json"
         $conf = Get-Content $confPath -Raw | ConvertFrom-Json
-        if ($conf.plugins) {
-            $conf.plugins.PSObject.Properties.Remove('updater')
-            $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
-            $confModified = $true
-        }
+        $conf.plugins.updater.pubkey = $pub.Trim()
+        $conf | ConvertTo-Json -Depth 30 | Set-Content $confPath
+        $env:TAURI_SIGNING_PRIVATE_KEY = (Resolve-Path "temp_build_key").Path
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+        $generatedKeys = $true
     }
     try {
         pnpm tauri build
     } finally {
-        if ($confModified) {
+        if ($generatedKeys) {
+            Remove-Item temp_build_key* -Force -ErrorAction SilentlyContinue
             git checkout -- src-tauri/tauri.conf.json 2>$null
         }
     }
